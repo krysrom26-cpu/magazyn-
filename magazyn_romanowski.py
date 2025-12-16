@@ -1,47 +1,78 @@
 import streamlit as st
+import pandas as pd
 
-# Konfiguracja tytułu strony
-st.set_page_config(page_title="Prosty Magazyn")
+# Konfiguracja strony
+st.set_page_config(page_title="Magazyn z Wykresem", layout="wide")
 
-st.title("📦 Prosta Aplikacja Magazynowa")
+st.title("📦 Magazyn z ilościami i historią")
 
-# Inicjalizacja listy produktów w sesji (żeby nie znikały przy każdym kliknięciu)
+# 1. Inicjalizacja stanów w sesji
 if 'magazyn' not in st.session_state:
-    st.session_state.magazyn = []
+    st.session_state.magazyn = {}  # Słownik {nazwa: ilosc}
 
-# --- SEKCJA DODAWANIA ---
-st.subheader("Dodaj nowy produkt")
-nowy_produkt = st.text_input("Nazwa produktu:", key="input_dodaj")
+if 'historia_stanu' not in st.session_state:
+    # Zaczynamy od stanu 0
+    st.session_state.historia_stanu = [0]
 
-if st.button("Dodaj do bazy"):
-    if nowy_produkt:
-        if nowy_produkt not in st.session_state.magazyn:
-            st.session_state.magazyn.append(nowy_produkt)
-            st.success(f"Dodano: {nowy_produkt}")
-        else:
-            st.warning("Ten produkt już jest na liście.")
-    else:
-        st.error("Wpisz nazwę produktu!")
+# Funkcja pomocnicza do aktualizacji wykresu
+def aktualizuj_historie():
+    suma_produktow = sum(st.session_state.magazyn.values())
+    st.session_state.historia_stanu.append(suma_produktow)
 
-# --- SEKCJA USUWANIA ---
-st.divider()
-st.subheader("Usuń produkt")
+# Układ kolumn dla formularzy
+col1, col2 = st.columns(2)
 
-if st.session_state.magazyn:
-    produkt_do_usuniecia = st.selectbox("Wybierz produkt do usunięcia:", st.session_state.magazyn)
+with col1:
+    st.subheader("➕ Dodaj / Aktualizuj produkt")
+    nazwa_dodaj = st.text_input("Nazwa produktu:", key="add_name")
+    ilosc_dodaj = st.number_input("Ilość:", min_value=1, value=1, key="add_qty")
     
-    if st.button("Usuń zaznaczony"):
-        st.session_state.magazyn.remove(produkt_do_usuniecia)
-        st.info(f"Usunięto: {produkt_do_usuniecia}")
-        st.rerun() # Odświeżenie aplikacji, aby zaktualizować listę
-else:
-    st.write("Magazyn jest pusty.")
+    if st.button("Zatwierdź dodawanie"):
+        if nazwa_dodaj:
+            if nazwa_dodaj in st.session_state.magazyn:
+                st.session_state.magazyn[nazwa_dodaj] += ilosc_dodaj
+            else:
+                st.session_state.magazyn[nazwa_dodaj] = ilosc_dodaj
+            
+            st.success(f"Zaktualizowano {nazwa_dodaj}")
+            aktualizuj_historie()
+            st.rerun()
+        else:
+            st.error("Podaj nazwę produktu!")
 
-# --- WIDOK MAGAZYNU ---
+with col2:
+    st.subheader("🗑️ Usuń produkt")
+    if st.session_state.magazyn:
+        produkt_do_usun = st.selectbox("Wybierz produkt:", list(st.session_state.magazyn.keys()))
+        if st.button("Usuń całkowicie z bazy"):
+            del st.session_state.magazyn[produkt_do_usun]
+            st.warning(f"Usunięto {produkt_do_usun}")
+            aktualizuj_historie()
+            st.rerun()
+    else:
+        st.info("Magazyn jest pusty.")
+
+# --- WIZUALIZACJA DANYCH ---
 st.divider()
-st.subheader("Aktualny stan magazynu:")
-if st.session_state.magazyn:
-    for i, p in enumerate(st.session_state.magazyn, 1):
-        st.write(f"{i}. {p}")
-else:
-    st.info("Brak produktów do wyświetlenia.")
+c1, c2 = st.columns([1, 2])
+
+with c1:
+    st.subheader("📋 Aktualny stan")
+    if st.session_state.magazyn:
+        df_magazyn = pd.DataFrame(
+            [(k, v) for k, v in st.session_state.magazyn.items()],
+            columns=["Produkt", "Ilość"]
+        )
+        st.table(df_magazyn)
+        st.metric("Suma wszystkich sztuk", sum(st.session_state.magazyn.values()))
+    else:
+        st.write("Brak danych.")
+
+with c2:
+    st.subheader("📈 Wykres ogólnego stanu magazynu")
+    if len(st.session_state.historia_stanu) > 1:
+        # Tworzymy wykres liniowy z historii
+        st.line_chart(st.session_state.historia_stanu)
+        st.caption("Oś X: Kolejne operacje | Oś Y: Całkowita liczba sztuk w magazynie")
+    else:
+        st.info("Wykonaj pierwszą operację, aby zobaczyć wykres zmian.")
